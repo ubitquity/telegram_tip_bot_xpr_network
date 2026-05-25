@@ -3,18 +3,24 @@
 // CONFIGURATION
 // ==========================================
 $botToken = "YOUR_TELEGRAM_BOT_TOKEN"; // Replace with your BotFather token
-$daoWallet = "nftitledao"; // The DAO wallet for donations
 $dbFile = __DIR__ . '/tipbot.sqlite'; // SQLite database file
+
+// Allowed Tokens Array
+$allowedTokens = ['XPR', 'UBQT', 'UBQTX', 'NDAO', 'NDAOX', 'NDAOXPR', 'MESSAGE', 'CIPHER', 'NOTARY', 'SMART'];
+
+// Donation Wallets
+$donationWallets = [
+    'ndao'      => 'nftitledao',
+    'ubitquity' => 'ubitquity1'
+];
 
 // ==========================================
 // DATABASE SETUP (SQLite via PDO)
 // ==========================================
 try {
-    // Connect to SQLite database (creates the file if it doesn't exist)
     $pdo = new PDO("sqlite:" . $dbFile);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Create the users table if it doesn't exist
     $createTableQuery = "
         CREATE TABLE IF NOT EXISTS users (
             telegram_handle TEXT PRIMARY KEY,
@@ -23,7 +29,6 @@ try {
     ";
     $pdo->exec($createTableQuery);
 } catch (PDOException $e) {
-    // If the DB fails to connect/create, exit silently to not break the webhook
     error_log("Database Error: " . $e->getMessage());
     exit;
 }
@@ -31,21 +36,18 @@ try {
 // ==========================================
 // TELEGRAM WEBHOOK RECEIVER
 // ==========================================
-// Read incoming JSON payload from Telegram
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
 
-// Exit if no valid message is found
 if (!$update || !isset($update['message'])) {
     exit;
 }
 
 $message = $update['message'];
 $chatId = $message['chat']['id'];
-$text = isset($message['text']) ? $message['text'] : '';
+$text = isset($message['text']) ? trim($message['text']) : '';
 $fromUser = isset($message['from']['username']) ? strtolower($message['from']['username']) : 'unknown_user';
 
-// Helper function to send messages back to Telegram
 function sendMessage($chatId, $text, $botToken) {
     $url = "https://api.telegram.org/bot$botToken/sendMessage";
     $data = [
@@ -67,39 +69,47 @@ function sendMessage($chatId, $text, $botToken) {
 // ==========================================
 // COMMAND ROUTING
 // ==========================================
+// Normalize extra spaces
+$text = preg_replace('/\s+/', ' ', $text);
 $parts = explode(' ', $text);
 $command = strtolower($parts[0]);
 
-// 1. /register <xpr_name> -> Links Telegram handle to WebAuth name
+// 1. /register <myxprnetworkname>
 if ($command === '/register') {
     if (count($parts) < 2) {
-        sendMessage($chatId, "Usage: <code>/register &lt;your_webauth_name&gt;</code>", $botToken);
+        sendMessage($chatId, "Usage: <code>/register &lt;your_xprnetwork_name&gt;</code>", $botToken);
         exit;
     }
     
-    // Clean the input (XPR names are a-z, 1-5, and dots)
     $xprName = preg_replace('/[^a-z1-5.]/', '', strtolower($parts[1])); 
     
-    // Insert or Update the user in the SQLite database
     $stmt = $pdo->prepare("INSERT OR REPLACE INTO users (telegram_handle, xpr_name) VALUES (:tg, :xpr)");
     $stmt->execute([':tg' => $fromUser, ':xpr' => $xprName]);
     
-    sendMessage($chatId, "✅ Successfully linked Telegram <b>@$fromUser</b> to WebAuth account: <b>$xprName</b>", $botToken);
+    sendMessage($chatId, "✅ Successfully linked Telegram <b>@$fromUser</b> to XPR Network account: <b>$xprName</b>", $botToken);
 } 
 
-// 2. /tip @user <amount> -> Generates a tip link
+// 2. /tip @user <amount> <TOKEN>
 elseif ($command === '/tip') {
-    if (count($parts) < 3) {
-        sendMessage($chatId, "Usage: <code>/tip @telegram_user &lt;amount&gt;</code>", $botToken);
+    if (count($parts) < 4) {
+        sendMessage($chatId, "Usage: <code>/tip @telegram_user &lt;amount&gt; &lt;TOKEN&gt;</code>\nExample: <code>/tip @satoshi 50 UBQT</code>", $botToken);
         exit;
     }
     
     $targetTelegram = strtolower(str_replace('@', '', $parts[1]));
+    $amount = preg_replace('/[^0-9.]/', '', $parts[2]); // Ensure numerical
+    $token = strtoupper($parts[3]);
     
-    // XPR requires exactly 4 decimal places (e.g., 10.0000)
-    $amount = number_format((float)$parts[2], 4, '.', '');
+    if (!in_array($token, $allowedTokens)) {
+        sendMessage($chatId, "❌ Unsupported token. Allowed tokens: " . implode(', ', $allowedTokens), $botToken);
+        exit;
+    }
     
-    // Retrieve the target user's XPR name from the SQLite database
+    if ($amount <= 0) {
+        sendMessage($chatId, "❌ Amount must be greater than 0.", $botToken);
+        exit;
+    }
+    
     $stmt = $pdo->prepare("SELECT xpr_name FROM users WHERE telegram_handle = :tg");
     $stmt->execute([':tg' => $targetTelegram]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -112,29 +122,42 @@ elseif ($command === '/tip') {
     $targetXpr = $row['xpr_name'];
     $memo = urlencode("Tip from Telegram @$fromUser");
     
-    // Generate WebAuth Native Link
-    $link = "https://webauth.com/transfer?to=$targetXpr&amount=$amount&symbol=XPR&memo=$memo";
+    $link = "https://webauth.com/transfer?to=$targetXpr&amount=$amount&symbol=$token&memo=$memo";
     
-    $response = "Click the link below to sign your tip of <b>$amount XPR</b> to @$targetTelegram ($targetXpr):\n\n";
+    $response = "Click the link below to sign your tip of <b>$amount $token</b> to @$targetTelegram ($targetXpr):\n\n";
     $response .= "<a href=\"$link\">🔒 Open WebAuth to Sign Tip</a>";
     
     sendMessage($chatId, $response, $botToken);
 }
 
-// 3. /donate <amount> -> Generates a donation link directly to nftitledao
+// 3. /donate <organization> <amount> <TOKEN>
 elseif ($command === '/donate') {
-    if (count($parts) < 2) {
-        sendMessage($chatId, "Usage: <code>/donate &lt;amount&gt;</code>", $botToken);
+    if (count($parts) < 4) {
+        $orgs = implode(', ', array_keys($donationWallets));
+        sendMessage($chatId, "Usage: <code>/donate &lt;organization&gt; &lt;amount&gt; &lt;TOKEN&gt;</code>\nOrgs: $orgs\nExample: <code>/donate ndao 100 NDAO</code>", $botToken);
         exit;
     }
     
-    $amount = number_format((float)$parts[1], 4, '.', '');
-    $memo = urlencode("Donation to NFTitle DAO");
+    $org = strtolower($parts[1]);
+    $amount = preg_replace('/[^0-9.]/', '', $parts[2]);
+    $token = strtoupper($parts[3]);
     
-    // Generate WebAuth Native Link targeting nftitledao
-    $link = "https://webauth.com/transfer?to=$daoWallet&amount=$amount&symbol=XPR&memo=$memo";
+    if (!array_key_exists($org, $donationWallets)) {
+        sendMessage($chatId, "❌ Unknown organization. Available: " . implode(', ', array_keys($donationWallets)), $botToken);
+        exit;
+    }
     
-    $response = "Support the DAO by donating <b>$amount XPR</b> to <b>$daoWallet</b>:\n\n";
+    if (!in_array($token, $allowedTokens)) {
+        sendMessage($chatId, "❌ Unsupported token. Allowed tokens: " . implode(', ', $allowedTokens), $botToken);
+        exit;
+    }
+    
+    $daoWallet = $donationWallets[$org];
+    $memo = urlencode("Donation to $org");
+    
+    $link = "https://webauth.com/transfer?to=$daoWallet&amount=$amount&symbol=$token&memo=$memo";
+    
+    $response = "Support <b>" . strtoupper($org) . "</b> by donating <b>$amount $token</b> to <b>$daoWallet</b>:\n\n";
     $response .= "<a href=\"$link\">🔒 Sign Donation in WebAuth</a>";
     
     sendMessage($chatId, $response, $botToken);
