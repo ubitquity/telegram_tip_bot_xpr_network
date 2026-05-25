@@ -1,10 +1,6 @@
-# telegram_tip_bot_xpr_network
-Telegram Tip Bot for XPR Network. Defaults to UBITQUITY &amp; nDAO utility tokens.
-
-
 # XPR Network Telegram Tip Bot (WebAuth)
 
-A lightweight, non-custodial Telegram tipping bot for the [XPR Network](https://xprnetwork.org). Built in PHP and SQLite, this bot is specifically designed to run on shared hosting environments like **sPanel** or **cPanel** without requiring CLI access, continuous Node.js/Go processes, or MySQL database configurations.
+A lightweight, multi-token, non-custodial Telegram tipping bot for the [XPR Network](https://xprnetwork.org). Built in PHP and SQLite, this bot is specifically designed to run on shared hosting environments like **sPanel** or **cPanel** without requiring CLI access, continuous background processes, or MySQL database configurations.
 
 Instead of holding user private keys on the server, this bot utilizes **WebAuth.com Native Transfer URLs**. When a user initiates a tip, the bot generates a secure universal link. Clicking the link opens the user's WebAuth wallet (mobile or desktop) to authorize and sign the transaction on-chain.
 
@@ -16,7 +12,8 @@ Instead of holding user private keys on the server, this bot utilizes **WebAuth.
 * **Zero Gas Fees:** Leverages XPR Network's feeless transactions.
 * **Serverless / Webhook-Driven:** Runs only when pinged by Telegram, consuming zero idle server resources.
 * **Zero-Config Database:** Uses a local SQLite file (`tipbot.sqlite`) that auto-generates on the first run.
-* **DAO Support:** Includes a built-in `/donate` command to route funds directly to community wallets (e.g., `nftitledao`).
+* **Multi-Token Support:** Officially supports `$XPR`, `$UBQT`, `$UBQTX`, `$NDAO`, `$NDAOX`, `$NDAOXPR`, `$MESSAGE`, `$CIPHER`, `$NOTARY`, and `$SMART`.
+* **DAO Support:** Includes a built-in `/donate` command to route funds directly to community wallets (`nftitledao` and `ubitquity1`).
 
 ---
 
@@ -39,7 +36,6 @@ Instead of holding user private keys on the server, this bot utilizes **WebAuth.
 ### 2. Configure the Bot
 1. Open `bot.php` in your text editor.
 2. Replace `YOUR_TELEGRAM_BOT_TOKEN` on line 5 with your actual BotFather token.
-3. *(Optional)* Change the `$daoWallet` variable on line 6 if you want the `/donate` command to go to a different XPR account.
 
 ### 3. Upload to sPanel/cPanel
 1. Log into your hosting control panel and open the **File Manager**.
