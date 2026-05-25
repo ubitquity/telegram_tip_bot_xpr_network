@@ -1,0 +1,133 @@
+const { Telegraf } = require('telegraf');
+const sqlite3 = require('sqlite3').verbose();
+
+// ==========================================
+// CONFIGURATION
+// ==========================================
+const BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'; // Replace with your BotFather token
+const DB_FILE = './tipbot.sqlite'; // SQLite database file
+
+const allowedTokens = ['XPR', 'UBQT', 'UBQTX', 'NDAO', 'NDAOX', 'NDAOXPR', 'MESSAGE', 'CIPHER', 'NOTARY', 'SMART'];
+const donationWallets = {
+    'ndao': 'nftitledao',
+    'ubitquity': 'ubitquity1'
+};
+
+// ==========================================
+// DATABASE SETUP
+// ==========================================
+const db = new sqlite3.Database(DB_FILE, (err) => {
+    if (err) console.error('Database connection error:', err.message);
+});
+
+db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+        telegram_handle TEXT PRIMARY KEY,
+        xpr_name TEXT NOT NULL
+    )
+`);
+
+// ==========================================
+// BOT INITIALIZATION
+// ==========================================
+const bot = new Telegraf(BOT_TOKEN);
+
+// 1. Command: /register <myxprnetworkname>
+bot.command('register', (ctx) => {
+    const parts = ctx.message.text.split(/\s+/);
+    if (parts.length < 2) {
+        return ctx.replyWithHTML('Usage: <code>/register &lt;your_xprnetwork_name&gt;</code>');
+    }
+
+    const telegramHandle = ctx.from.username ? ctx.from.username.toLowerCase() : null;
+    if (!telegramHandle) {
+        return ctx.reply('❌ You need a Telegram username to register. Please set one in your Telegram settings.');
+    }
+
+    // Clean the input (XPR names are a-z, 1-5, and dots)
+    const xprName = parts[1].toLowerCase().replace(/[^a-z1-5.]/g, '');
+
+    db.run(
+        `INSERT OR REPLACE INTO users (telegram_handle, xpr_name) VALUES (?, ?)`,
+        [telegramHandle, xprName],
+        (err) => {
+            if (err) return ctx.reply('❌ Database error.');
+            ctx.replyWithHTML(`✅ Successfully linked Telegram <b>@${telegramHandle}</b> to XPR Network account: <b>${xprName}</b>`);
+        }
+    );
+});
+
+// 2. Command: /tip @user <amount> <TOKEN>
+bot.command('tip', (ctx) => {
+    const parts = ctx.message.text.split(/\s+/);
+    if (parts.length < 4) {
+        return ctx.replyWithHTML('Usage: <code>/tip @telegram_user &lt;amount&gt; &lt;TOKEN&gt;</code>\nExample: <code>/tip @satoshi 50 UBQT</code>');
+    }
+
+    const telegramHandle = ctx.from.username ? ctx.from.username.toLowerCase() : 'unknown';
+    const targetTelegram = parts[1].replace('@', '').toLowerCase();
+    const amount = parts[2].replace(/[^0-9.]/g, ''); // Ensure numerical
+    const token = parts[3].toUpperCase();
+
+    if (!allowedTokens.includes(token)) {
+        return ctx.reply(`❌ Unsupported token. Allowed tokens: ${allowedTokens.join(', ')}`);
+    }
+
+    if (parseFloat(amount) <= 0 || isNaN(amount)) {
+        return ctx.reply('❌ Amount must be greater than 0.');
+    }
+
+    db.get(`SELECT xpr_name FROM users WHERE telegram_handle = ?`, [targetTelegram], (err, row) => {
+        if (err || !row) {
+            return ctx.replyWithHTML(`User <b>@${targetTelegram}</b> hasn't registered their XPR name yet. Tell them to use /register!`);
+        }
+
+        const targetXpr = row.xpr_name;
+        const memo = encodeURIComponent(`Tip from Telegram @${telegramHandle}`);
+        const link = `https://webauth.com/transfer?to=${targetXpr}&amount=${amount}&symbol=${token}&memo=${memo}`;
+
+        const response = `Click the link below to sign your tip of <b>${amount} ${token}</b> to @${targetTelegram} (${targetXpr}):\n\n<a href="${link}">🔒 Open WebAuth to Sign Tip</a>`;
+
+        ctx.replyWithHTML(response, { disable_web_page_preview: true });
+    });
+});
+
+// 3. Command: /donate <organization> <amount> <TOKEN>
+bot.command('donate', (ctx) => {
+    const parts = ctx.message.text.split(/\s+/);
+    if (parts.length < 4) {
+        const orgs = Object.keys(donationWallets).join(', ');
+        return ctx.replyWithHTML(`Usage: <code>/donate &lt;organization&gt; &lt;amount&gt; &lt;TOKEN&gt;</code>\nOrgs: ${orgs}\nExample: <code>/donate ndao 100 NDAO</code>`);
+    }
+
+    const org = parts[1].toLowerCase();
+    const amount = parts[2].replace(/[^0-9.]/g, '');
+    const token = parts[3].toUpperCase();
+
+    if (!donationWallets[org]) {
+        return ctx.reply(`❌ Unknown organization. Available: ${Object.keys(donationWallets).join(', ')}`);
+    }
+
+    if (!allowedTokens.includes(token)) {
+        return ctx.reply(`❌ Unsupported token. Allowed tokens: ${allowedTokens.join(', ')}`);
+    }
+
+    if (parseFloat(amount) <= 0 || isNaN(amount)) {
+        return ctx.reply('❌ Amount must be greater than 0.');
+    }
+
+    const daoWallet = donationWallets[org];
+    const memo = encodeURIComponent(`Donation to ${org}`);
+    const link = `https://webauth.com/transfer?to=${daoWallet}&amount=${amount}&symbol=${token}&memo=${memo}`;
+
+    const response = `Support <b>${org.toUpperCase()}</b> by donating <b>${amount} ${token}</b> to <b>${daoWallet}</b>:\n\n<a href="${link}">🔒 Sign Donation in WebAuth</a>`;
+
+    ctx.replyWithHTML(response, { disable_web_page_preview: true });
+});
+
+// Start the Bot using Long-Polling
+bot.launch().then(() => console.log('🤖 XPR Network Bot is running!'));
+
+// Enable graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
