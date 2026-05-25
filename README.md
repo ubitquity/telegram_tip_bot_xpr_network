@@ -4,7 +4,7 @@ Telegram Tip Bot for XPR Network. Defaults to UBITQUITY &amp; nDAO utility token
 
 # XPR Network Telegram Tip Bot (WebAuth)
 
-A lightweight, non-custodial Telegram tipping bot for the [XPR Network](https://proton.org). Built in PHP and SQLite, this bot is specifically designed to run on shared hosting environments like **sPanel** or **cPanel** without requiring CLI access, continuous Node.js/Go processes, or MySQL database configurations.
+A lightweight, non-custodial Telegram tipping bot for the [XPR Network](https://xprnetwork.org). Built in PHP and SQLite, this bot is specifically designed to run on shared hosting environments like **sPanel** or **cPanel** without requiring CLI access, continuous Node.js/Go processes, or MySQL database configurations.
 
 Instead of holding user private keys on the server, this bot utilizes **WebAuth.com Native Transfer URLs**. When a user initiates a tip, the bot generates a secure universal link. Clicking the link opens the user's WebAuth wallet (mobile or desktop) to authorize and sign the transaction on-chain.
 
