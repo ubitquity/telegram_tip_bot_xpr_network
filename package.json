@@ -1,0 +1,13 @@
+{
+  "name": "xpr-telegram-tipbot",
+  "version": "1.0.0",
+  "description": "XPR Network Non-Custodial Telegram Tip Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.7",
+    "telegraf": "^4.15.3"
+  }
+}
